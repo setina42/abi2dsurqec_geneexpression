@@ -17,7 +17,7 @@ API_DATA_PATH = API_SERVER + "api/v2/data/"
 def GetGeneNames():   
     startRow = 0
     numRows = 2000
-    totalRows = 2000  #was -1
+    totalRows = -1  #was -1
     rows = []
     GeneNames = []
     SectionDataSetID = []
@@ -94,10 +94,10 @@ def convert_raw_to_nii(file):
     affine_matrix[3,3] = 1  #?????
 
     img = nibabel.Nifti1Image(image_array,affine_matrix)
-    nibabel.save(img,"energy.nii.gz")
+    nibabel.save(img,os.path.join(os.path.dirname(file),"energy.nii.gz"))
 
 def apply_composite(file):
-    at = AntsApplyTransform()
+    at = ApplyTransforms()
     at.inputs.dimension = 3
     at.inputs.input_image = file
     at.inputs.reference_image = 'dsurqec_200micron_masked.nii'
@@ -109,7 +109,7 @@ def apply_composite(file):
 def main():
 
     GeneNames=GetGeneNames()
-    download_all_ISH(GeneNames[1][1:100])
+    download_all_ISH(GeneNames[1])
 
 
 if __name__ == "__main__":
