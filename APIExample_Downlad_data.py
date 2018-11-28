@@ -8,6 +8,7 @@ import urllib.request
 import zipfile
 import numpy
 import nibabel
+from collections import defaultdict
 from mhd_utils_3d import *
 from nipype.interfaces.ants import ApplyTransforms
 
@@ -24,17 +25,18 @@ def GetGeneNames():
         list of all genes where expression data is available for download. Dict contains experiment/gene metadata.
 
     SectionDataSetID : list(int)
-        corresponding SectionDataSetID (SectionDataSet: Collection of images' metadata for a gene expression experiment or histological purposes, see "http://help.brain-map.org/display/api/Data+Model"
+        corresponding SectionDataSetID (SectionDataSet: see "http://help.brain-map.org/display/api/Data+Model")
         ID needed to specify download target.
 
     """
 
     startRow = 0
-    numRows = 20
-    totalRows = 30
+    numRows = 2000
+    totalRows = -1
     rows = []
     GeneNames = []
     SectionDataSetID = []
+    info = defaultdict(list)
 
 #    GeneNames_cor = []
 #    SectionDataSetID_cor = []
@@ -53,14 +55,7 @@ def GetGeneNames():
         for x in response['msg']:
 
             if x['failed'] == False and x['expression'] == True :
-                GeneNames.append(x['genes'])
-                SectionDataSetID.append(x['id'])
-#                if x['reference_space_id'] == 10:
-#                    GeneNames_sag.append(x['genes'])
-#                    SectionDataSetID_sag.append(x['id'])
-#                if x['reference_space_id'] == 9:
-#                    GeneNames_cor.append(x['genes'])
-#                    SectionDataSetID_cor.append(x['id'])
+                info[x['genes'][0]['acronym']].append(x['id'])
         if totalRows < 0:
             totalRows = int(response['total_rows'])
 
@@ -69,27 +64,30 @@ def GetGeneNames():
         if startRow >= totalRows:
             done = True
 
-    return GeneNames,SectionDataSetID
+    return info
 
-def download_all_ISH(SectionDataSetID):
+def download_all_ISH(info):
     """
     Download all given genes corresponding to SectionDataSetID given, converts data format from mhd/raw to nii and registers data to dsurqec template.
 
     Parameters:
     -----------
         SectionDataSetID : list(int)
-        list of SectionDataSetID to download. 
+            list of SectionDataSetID to download.
     """
     os.mkdir("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data")
     download_url = "http://api.brain-map.org/grid_data/download/"
-    for id in SectionDataSetID:
+    for gene in info:
+        path_to_gene = os.path.join("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data",gene)
+        os.mkdir(path_to_gene)
+        for id in info[gene]:
             url = download_url + str(id)
             fh = urllib.request.urlretrieve(url)
             zf = zipfile.ZipFile(fh[0])
-            filename = str.split((fh[1]._headers[6][1]),'filename=')[1]  #TODO: Does this hold??
+            filename = str.split((fh[1]._headers[6][1]),'filename=')[1]  #TODO: Consistent???
             filename = str.split(filename,'.zip')[0]
-            path_to_folder = os.path.join("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data",filename)
-            zf.extractall(os.path.join("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data",filename))
+            path_to_folder = os.path.join(path_to_gene,filename)
+            zf.extractall(os.path.join(path_to_gene,filename))
             zf.close()
             path_to_mhd = os.path.join(path_to_folder,"energy.mhd")
             path_to_nifti = convert_raw_to_nii(path_to_mhd,filename)
@@ -116,6 +114,7 @@ def convert_raw_to_nii(input_file,output_file):
     affine_matrix[1,1] = dims[1]
     affine_matrix[2,2] = dims[2]
 
+    #Orient in RAS
     image_array = numpy.swapaxes(image_array,1,2)
 
     image_array = image_array[::-1,:,:]
@@ -155,8 +154,8 @@ def apply_composite(file):
 
 def main():
 
-    GeneNames=GetGeneNames()
-    download_all_ISH(GeneNames[1])
+    info=GetGeneNames()
+    download_all_ISH(info)
 
 
 if __name__ == "__main__":
