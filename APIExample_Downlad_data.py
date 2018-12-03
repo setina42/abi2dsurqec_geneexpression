@@ -8,9 +8,11 @@ import urllib.request
 import zipfile
 import numpy
 import nibabel
+import re
 from collections import defaultdict
 from mhd_utils_3d import *
 from nipype.interfaces.ants import ApplyTransforms
+#from nipype.interfaces.fsl import fslorient
 
 API_SERVER = "http://api.brain-map.org/"
 API_DATA_PATH = API_SERVER + "api/v2/data/"
@@ -73,7 +75,7 @@ def download_all_ISH(info):
     Parameters:
     -----------
         SectionDataSetID : list(int)
-            list of SectionDataSetID to download.
+            o=[0.200000002980232 0 0 -6.26999998092651; 0 0.200000002980232 0 -10.6000003814697; 0 0 0.200000002980232 -7.88000011444092; 0 0 0 1]list of SectionDataSetID to download.
     """
     os.mkdir("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data")
     download_url = "http://api.brain-map.org/grid_data/download/"
@@ -84,8 +86,13 @@ def download_all_ISH(info):
             url = download_url + str(id)
             fh = urllib.request.urlretrieve(url)
             zf = zipfile.ZipFile(fh[0])
-            filename = str.split((fh[1]._headers[6][1]),'filename=')[1]  #TODO: Consistent???
+            filename = str.split((fh[1]._headers[6][1]),'filename=')[1]  #TODO: Consistent??
             filename = str.split(filename,'.zip')[0]
+            print(filename)
+            #replace brackets with '_' and remove all other special characters
+            filename = re.sub('[()]',"_",filename)
+            filename = re.sub('\W', '',filename)
+            print(filename)
             path_to_folder = os.path.join(path_to_gene,filename)
             zf.extractall(os.path.join(path_to_gene,filename))
             zf.close()
@@ -147,9 +154,12 @@ def apply_composite(file):
     at.inputs.input_image = file
     at.inputs.reference_image = 'dsurqec_200micron_masked.nii'
     name = str.split(os.path.basename(file),'.nii')[0] + '_2dsurqec.nii.gz'
+    at.inputs.interpolation = 'NearestNeighbor' #TODO: Sure??
     at.inputs.output_image = os.path.join(os.path.dirname(file),name)
     at.inputs.transforms = 'abi2dsurqec_Composite.h5'
     at.run()
+
+    #TODO sform to qform
 
 
 def main():
