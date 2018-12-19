@@ -80,9 +80,13 @@ def download_all_ISH(info):
     os.mkdir("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data")
     download_url = "http://api.brain-map.org/grid_data/download/"
     for gene in info:
-        path_to_gene = os.path.join("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data",gene)
+        #replace brackets with '_' and remove all other special characters
+        gene_r = re.sub('[()]',"_",gene)
+        gene_r = re.sub('\W', '',gene_r)
+        info[gene_r] = info.pop(gene)
+        path_to_gene = os.path.join("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data",gene_r)
         os.mkdir(path_to_gene)
-        for id in info[gene]:
+        for id in info[gene_r]:
             url = download_url + str(id)
             fh = urllib.request.urlretrieve(url)
             zf = zipfile.ZipFile(fh[0])
