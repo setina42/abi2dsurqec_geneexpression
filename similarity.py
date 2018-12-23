@@ -5,12 +5,16 @@ import glob
 from nipype.interfaces import ants as ants
 import nipype.interfaces.fsl.maths as fsl
 import csv
+import argparse
+#TODO:do I need nilearn??
+import nilearn
+import samri.plotting.maps as maps
+from collections import defaultdict
+
 
 def transform(x,y,z,affine):
 	M = affine[:4, :4]
 	A = np.linalg.inv(M)
-	print("unrounded")
-	print(A.dot([x,y,z,1]))
 	return np.round(A.dot([x,y,z,1]),decimals=0)
 
 def mirror_sagittal(image):
@@ -34,31 +38,31 @@ def mirror_sagittal(image):
 
 	right_side = np.copy(img_data[0:mid,:,:])
 	right_side = np.flip(right_side,0)
-
+#TODO: checkec for case 3, test for other cases as well
 	#replace
 	if np.shape(left_side)[0] > np.shape(img_data[0:mid,:,:])[0]:
-		print("case 1")
+#		print("case 1")
 		#case 1: origin slightly to the left (or right??), need to trim left_side to the size of the right side
 		replace_value = np.shape(left_side)[0] - np.shape(img_data[0:mid,:,:])[0]
 		img_data[0:mid,:,:][img_data[0:mid,:,:]  == -1] = left_side[(replace_value-1):,:,:][img_data[0:mid,:,:]  == -1]
-		np.savetxt("Slice_case1.txt",img_data[:,(int(origin[1]) -5):(int(origin[1])) -2, (int(origin[2]) -5)])
+		#np.savetxt("Slice_case1.txt",img_data[:,(int(origin[1]) -5):(int(origin[1])) -2, (int(origin[2]) -5)])
 		img_data[mid:np.shape(right_side[0]),:,:][img_data[mid:,:,:]  == -1] = right_side[:,:,:][img_data[mid:,:,:]  == -1]
 
 	elif np.shape(left_side)[0] < np.shape(img_data[0:mid,:,:])[0]:
-		print("case 2")
+#		print("case 2")
 		#case 2 : origin slightly to the right (or left??), need to
 		replace_value = np.shape(img_data[0:mid,:,:])[0] - np.shape(left_side)[0]
 		img_data[replace_value:mid,:,:] = left_side
-		np.savetxt("Slice_case2.txt",img_data[:,(int(origin[1]) -5):(int(origin[1])) -2, (int(origin[2]) -5)])
+		#np.savetxt("Slice_case2.txt",img_data[:,(int(origin[1]) -5):(int(origin[1])) -2, (int(origin[2]) -5)])
 
 		img_data[mid:,:,:][img_data[mid:,:,:]  == -1] = right_side[0:np.shape(img_data[mid:,:,:]),:,:][img_data[mid:,:,:]  == -1]
 	else:
-		print("case 3")
+#		print("case 3")
 		#case 3: same size
 		#TODO: -1 or 0??
-		#TODO: There's got to be a better way to write this....
+		#TODO: There's got to be a better way to write this....  -> a_slice notation:: a[10:16] is a reference, not a copy!
 		img_data[0:mid,:,:][img_data[0:mid,:,:]  == -1] = left_side[img_data[0:mid,:,:]  == -1]
-		np.savetxt("Slice_case3.txt",img_data[:,(int(origin[1]) -5):(int(origin[1])) -2, (int(origin[2]) -5)])
+		#np.savetxt("Slice_case3.txt",img_data[:,(int(origin[1]) -5):(int(origin[1])) -2, (int(origin[2]) -5)])
 		img_data[mid+1:,:,:][img_data[mid+1:,:,:]  == -1] = right_side[[img_data[mid+1:,:,:]  == -1]]
 
 	img_average = nibabel.Nifti1Image(img_data,img.affine)
@@ -68,15 +72,15 @@ def mirror_sagittal(image):
 
 	return path_to_mirrored
 
-def create_mask(image):
+def create_mask(image,threshold):
 	#I think i need 0 to be in my mask. This seems not to be possible using fslmaths, so maybe do directly with numpy? thr sets all to zero below the value and bin uses image>0 to binarise.
-#	mask = fsl.Threshold()
-#	mask.inputs.thresh = 0
-#	mask.inputs.args = '-bin'
-#	mask.inputs.in_file = image
-#	img_out = str.split(image,'.nii')[0] + '_mask.nii.gz'
-#	mask.inputs.out_file = img_out
-#	mask.run()
+	#mask = fsl.Threshold()
+	#mask.inputs.thresh = 0
+	#mask.inputs.args = '-bin'
+	#mask.inputs.in_file = image
+	#img_out = str.split(image,'.nii')[0] + '_mask_fsl.nii.gz'
+	#mask.inputs.out_file = img_out
+	#mask.run()
 
 	mask_img = nibabel.load("/home/gentoo/src/abi2dsurqec_geneexpression/dsurqec_200micron_mask.nii")
 	atlas_mask = mask_img.get_fdata()
@@ -84,20 +88,24 @@ def create_mask(image):
 	#using numpy instead of fslmaths
 	img = nibabel.load(image)
 	img_data = img.get_fdata()
-	#img_data[img_data >= 0 and atlas_mask == 1] = 1
-	img_data[np.logical_and(img_data >= 0,atlas_mask == 1)] = 1
-	img_data[img_data < 0] = 0
+	#apparently ambibuous:img_data[img_data >= 0 and atlas_mask == 1] = 1
+#	print("mask")
+#	print(np.min(img_data))
+	img_data[np.logical_and(img_data > threshold,atlas_mask == 1)] = 1
+	img_data[np.logical_or(img_data <= threshold,atlas_mask==0)] = 0
 	img_out = str.split(image,'.nii')[0] + '_mask.nii.gz'
 	img_mask = nibabel.Nifti1Image(img_data,img.affine)
 	nibabel.save(img_mask,img_out)
 
 	return img_out
 
+def nan_if(arr,value):
+	return np.where(arr == value, np.nan,arr)
+
 def create_experiment_average(imgs,strategy='max'):
 	"""
 	In case of several datasets present, experiment average is calculated.
 	"""
-
 	img_data = []
 	img = []
 	for image in imgs:
@@ -112,8 +120,12 @@ def create_experiment_average(imgs,strategy='max'):
 				average_img = np.maximum(average_img,img_data[i])
 
 	elif strategy == 'mean':
-		#TODO Ignore values with -1 for averaging, take only other values
-		average_img = (np.add(*img_data))/float(len(img_data))
+		for i in range(0,len(img_data)):
+			#ignore values of -1 for mean
+			img_data[i] = nan_if(img_data[i],-1)
+
+		average_img = np.nanmean([*img_data],axis=0)
+		average_img[np.isnan(average_img)] = -1
 
 	filename = str.split(os.path.basename(imgs[0]),"_")[0] + "_experiments_average.nii.gz"
 	path_to_exp_average = os.path.join(os.path.dirname(imgs[0]),"..")
@@ -139,17 +151,54 @@ def ants_measure_similarity(fixed_image,moving_image,mask_gene = None,mask_map =
 	sim.inputs.sampling_percentage = sampling_percentage
 	if not mask_map is None: sim.inputs.fixed_image_mask = mask_map
 	if not mask_gene is None: sim.inputs.moving_image_mask = mask_gene
-	sim_res = sim.run()
-	return sim_res.outputs.similarity
+	try:
+		sim_res = sim.run()
+		res = sim_res.outputs.similarity
+	except:
+		print("something happened?")
+		res = 0
+	return res
 
-def measure_similarity_geneexpression(stat_map,path_to_genes="/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data",metric = 'MI',radius_or_number_of_bins = 64,comparison = 'gene',strategy='max'):
+def plot_results(stat_map,results,hits = 3, template = "/usr/share/mouse-brain-atlases/ambmc2dsurqec_15micron_masked.obj",comparison='gene',path_to_genes="/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data"):
+	#TODO: stat3D: support for two meshes!
+	for i in range(0,hits):
+		gene_name = results[i][0].split("_")[0] #this should work in both cases
+		full_path_to_gene = results[i][1][1]
+		print("now plotting: ")
+		print(full_path_to_gene)
+		maps.stat3D(full_path_to_gene,template="/home/gentoo/src/abi2dsurqec_geneexpression/dsurqec_200micron_masked.nii",save_as=gene_name + '.png',threshold=0.1,pos_values=True)
+	return
+
+def output_results(results,hits = 3,output_name=None):
+
+	print("Top " + str(hits) + " hits: ")
+	for i in range(0,hits):
+		print(str(results[i][1][0]) + " " + str(results[i][1][1]))
+
+	#save to csv
+	if output_name is None:
+		output_name =  "output_results.csv"
+	else:
+		output_name = output_name + ".csv"
+
+	with open(output_name,'w') as f:
+		for i in range(0,len(results)):
+			f.write("%s,%s\n"%(results[i][0],results[i][1]))
+
+
+	return
+
+def measure_similarity_geneexpression(stat_map,path_to_genes="/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data",metric = 'MI',radius_or_number_of_bins = 64,comparison = 'gene',strategy='mean'):
 	"""
 	master blabla
 	"""
-	#TODO: create a mask for the stat map? or userprovided? or both possible? Or use a single mask
-	#TODO case: no exp average is wanted
-	mask_map = create_mask(stat_map)
-	results = dict()
+
+	#TODO: if mirrored or mask files are already present, don't make them again
+	#TODO: 
+	#TODO: create a mask for the stat map? or userprovided? or both possible? Or use a single mask. Also, if yes, include threshold in mask func
+	mask_map = create_mask(stat_map,0)
+	#results = dict()
+	results = defaultdict(list)
 	#loop through all gene folders, either get data form single experiment or get combined data.
 	if comparison == 'gene':
 		for dir in os.listdir(path_to_genes):
@@ -177,9 +226,10 @@ def measure_similarity_geneexpression(stat_map,path_to_genes="/home/gentoo/src/a
 				print("Skipping " + dir)
 				continue
 			#TODO: catch unexpected errors as to not interrupt program, print genename
-			mask_gene = create_mask(img_gene)
+			mask_gene = create_mask(img_gene,-1)
 			similarity = ants_measure_similarity(stat_map,img_gene,mask_gene = mask_gene,mask_map=mask_map,metric=metric,radius_or_number_of_bins=radius_or_number_of_bins)
-			results[dir] = similarity
+			results[dir].append(similarity)
+			results[dir].append(img_gene)
 
 	elif comparison == 'experiment':
 		for dir in os.listdir(path_to_genes):
@@ -190,27 +240,72 @@ def measure_similarity_geneexpression(stat_map,path_to_genes="/home/gentoo/src/a
 			imgs = glob.glob(path + '/*/*_2dsurqec.nii.gz')
 			for img_gene in imgs:
 				if "sagittal" in img_gene: img_gene = mirror_sagittal(img_gene)
-				mask_gene = create_mask(img_gene)
+				mask_gene = create_mask(img_gene,-1)
 				experiment_id = os.path.basename(img_gene).split("_")[3]
-				print(experiment_id)
 				id = dir + "_" + experiment_id
 				similarity = ants_measure_similarity(stat_map,img_gene,mask_gene = mask_gene,mask_map=mask_map,metric=metric,radius_or_number_of_bins=radius_or_number_of_bins)
-				results[id] = similarity
+				results[id].append(similarity)
+				results[id].append(img_gene)
+	#TODO: sort, or use sorted dict form beginning, or only keep top scores anyway?
+	#print(comparison)
+	#view = [ (v,k) for k,v in results.items() ]
+	#view.sort(reverse=True)
+	#for v,k in view:
+	#	print( "%s: %f" % (k,v))
 
-	name = metric + "_" + str(radius_or_number_of_bins) +".csv"
-	with open(name,'w') as f:
-		for key in results.keys():
-			f.write("%s,%s\n"%(key,results[key]))
+	#TODO: if metric = MSE, sort other way round
+	#sort results:
+	sorted_results = sorted(results.items(),key=lambda x: x[1][0])
+#	print(sorted_results[4]) #5th highest result
+#	print(sorted_results[4][0]) #key = gene or exp_id
+#	print(sorted_results[4][1][0]) #similarity score
+#	print(sorted_results[4][1][1]) #path
+
+	output_results(sorted_results, hits = 3)
+	plot_results(stat_map,sorted_results,hits=3)
+
+	return results
 
 
+def measure_similarity_connectivity(stat_map,path_to_exp="/home/gentoo/src/abi2dsurqec_geneexpression/ABI_connectivity_data",metric = 'MI',radius_or_number_of_bins = 64):
+	mask_map = create_mask(stat_map,0)
+	results = defaultdict(list)
+	for dir in os.listdir(path_to_exp):
+		path = os.path.join(path_to_exp,dir)
+		print(path)
+		img = glob.glob(path + '/*_2dsurqec.nii*')[0]
+		mask_gene = create_mask(img,0)
+		similarity = ants_measure_similarity(stat_map,img,mask_gene = mask_gene,mask_map =mask_map,metric=metric,radius_or_number_of_bins=radius_or_number_of_bins)
+		results[dir].append(similarity)
+		results[dir].append(img)  #path for plotting
+	sorted_results = sorted(results.items(),key=lambda x: x[1][0])
+	print(sorted_results)
+	output_results(sorted_results,hits = 3)
+	plot_results(stat_map,sorted_results,hits=3)
 
 def main():
 
+	parser = argparse.ArgumentParser(description="Similarity",formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+	parser.add_argument('--stat_map','-s',type=str)
+	parser.add_argument('--path_genes','-p',type=str)
+	parser.add_argument('--comparison','-c',type=str, default='gene')
+	parser.add_argument('--radius_or_number_of_bins','-r',type=int,default = 64)
+	parser.add_argument('--metric','-m',type=str,default='MI')
+	parser.add_argument('--strategy','-y',type=str, default='max')
 
 	img = "/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Mef2c/Mef2c_P56_sagittal_79677145_200um/Mef2c_P56_sagittal_79677145_200um_2dsurqec.nii.gz"
 # res = ants_measure_similarity("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Mef2c/Mef2c_P56_sagittal_79677145_200um/Mef2c_P56_sagittal_79677145_200um_2dsurqec.nii.gz","/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Mef2c/Mef2c_P56_coronal_79567505_200um//Mef2c_P56_coronal_79567505_200um_2dsurqec.nii.gz")
 	#	print(res)
-	measure_similarity_geneexpression("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Mef2c/Mef2c_P56_coronal_79567505_200um/Mef2c_P56_coronal_79567505_200um_2dsurqec.nii.gz",metric = 'MI',radius_or_number_of_bins = 64,comparison = 'experiment')
+#	measure_similarity_geneexpression("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Mef2c/Mef2c_P56_coronal_79567505_200um/Mef2c_P56_coronal_79567505_200um_2dsurqec.nii.gz",metric = 'MI',radius_or_number_of_bins = 64,comparison = 'experiment')
+#	measure_similarity_geneexpression("/home/gentoo/ABI_data_full/data/Tlx2/Tlx2_P56_sagittal_81655554_200um/Tlx2_P56_sagittal_81655554_200um_2dsurqec_mirrored.nii.gz",metric = 'MI',path_to_genes="/home/gentoo/ABI_data_full/data",radius_or_number_of_bins = 64,comparison = 'gene')
+
+	measure_similarity_connectivity("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Kat6a/Kat6a_P56_sagittal_71764326_200um/Kat6a_P56_sagittal_71764326_200um_2dsurqec_mirrored.nii.gz",metric = 'MI',radius_or_number_of_bins = 64)
+
+
+
+#	measure_similarity_geneexpression("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Kat6a/Kat6a_P56_sagittal_71764326_200um/Kat6a_P56_sagittal_71764326_200um_2dsurqec_mirrored.nii.gz",metric = 'MI',path_to_genes="/home/gentoo/ABI_data_full/data",radius_or_number_of_bins = 64,comparison = 'gene')
+
+
 
 #	measure_similarity_geneexpression("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Mef2c/Mef2c_P56_coronal_79567505_200um/Mef2c_P56_coronal_79567505_200um_2dsurqec.nii.gz",metric = 'CC',radius_or_number_of_bins = 4)
 
