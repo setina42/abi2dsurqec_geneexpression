@@ -10,6 +10,7 @@ import argparse
 import nilearn
 import samri.plotting.maps as maps
 from collections import defaultdict
+from nilearn._utils.extmath import fast_abs_percentile
 
 
 def transform(x,y,z,affine):
@@ -81,8 +82,8 @@ def create_mask(image,threshold):
 	#img_out = str.split(image,'.nii')[0] + '_mask_fsl.nii.gz'
 	#mask.inputs.out_file = img_out
 	#mask.run()
-
-	mask_img = nibabel.load("/home/gentoo/src/abi2dsurqec_geneexpression/dsurqec_200micron_mask.nii")
+	
+	mask_img = nibabel.load("/home/gentoo/src/abi2dsurqec_geneexpression/dsurqec_40micron_mask.nii")
 	atlas_mask = mask_img.get_fdata()
 
 	#using numpy instead of fslmaths
@@ -91,6 +92,8 @@ def create_mask(image,threshold):
 	#apparently ambibuous:img_data[img_data >= 0 and atlas_mask == 1] = 1
 #	print("mask")
 #	print(np.min(img_data))
+	#TODO: Atlas mask needs to have the right resolution, load different one for dsurqec_40micron_mask.nii. Do I always compare between the same resolution? Otherwise I need two brain masks...
+	#TODO: ensure shape mathces
 	img_data[np.logical_and(img_data > threshold,atlas_mask == 1)] = 1
 	img_data[np.logical_or(img_data <= threshold,atlas_mask==0)] = 0
 	img_out = str.split(image,'.nii')[0] + '_mask.nii.gz'
@@ -159,8 +162,13 @@ def ants_measure_similarity(fixed_image,moving_image,mask_gene = None,mask_map =
 		res = 0
 	return res
 
+
+
 def plot_results(stat_map,results,hits = 3, template = "/usr/share/mouse-brain-atlases/ambmc2dsurqec_15micron_masked.obj",comparison='gene',path_to_genes="/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data"):
-	#TODO: stat3D: support for two meshes!
+	#TODO: overlay 1,3 plots
+	# TODO: put into stat3D or stat, to avoid loading the data twice threshold = fast_abs_percentile(stat_map
+	display_stat = maps.stat3D(stat_map,template="/home/gentoo/src/abi2dsurqec_geneexpression/dsurqec_200micron_masked.nii",save_as= '_stat.png',threshold=4,pos_values=True)
+
 	for i in range(0,hits):
 		gene_name = results[i][0].split("_")[0] #this should work in both cases
 		full_path_to_gene = results[i][1][1]
@@ -267,13 +275,15 @@ def measure_similarity_geneexpression(stat_map,path_to_genes="/home/gentoo/src/a
 	return results
 
 
-def measure_similarity_connectivity(stat_map,path_to_exp="/home/gentoo/src/abi2dsurqec_geneexpression/ABI_connectivity_data",metric = 'MI',radius_or_number_of_bins = 64):
+def measure_similarity_connectivity(stat_map,path_to_exp="/home/gentoo/src/abi2dsurqec_geneexpression/ABI_connectivity_data",metric = 'MI',radius_or_number_of_bins = 64,resolution=40):
 	mask_map = create_mask(stat_map,0)
 	results = defaultdict(list)
 	for dir in os.listdir(path_to_exp):
 		path = os.path.join(path_to_exp,dir)
 		print(path)
-		img = glob.glob(path + '/*_2dsurqec.nii*')[0]
+		img = glob.glob(path + '/*' + str(resolution) + '*_2dsurqec.nii*')[0]
+		print(img)
+		print(len(glob.glob(path + '/*' + str(resolution) + '*_2dsurqec.nii*')))
 		mask_gene = create_mask(img,0)
 		similarity = ants_measure_similarity(stat_map,img,mask_gene = mask_gene,mask_map =mask_map,metric=metric,radius_or_number_of_bins=radius_or_number_of_bins)
 		results[dir].append(similarity)
