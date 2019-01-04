@@ -22,7 +22,7 @@ API_SERVER = "http://api.brain-map.org/"
 API_DATA_PATH = API_SERVER + "api/v2/data/"
 
 #TODO: maybe merge into a single file that downloads either connectivtiy or gene expression data
-
+#TODO: get some info on experiment data
 def GetExpID():
     """
     Queries the Allen Mouse Brain Institute website for all gene expression data available for download.
@@ -39,8 +39,8 @@ def GetExpID():
     """
 
     startRow = 0
-    numRows = 3
-    totalRows = 3
+    numRows = 1000
+    totalRows = -1
     rows = []
     GeneNames = []
     SectionDataSetID = []
@@ -101,7 +101,7 @@ def nrrd_to_nifti(file):
     nibabel.save(img,nii_path)
 
     return nii_path
-#TODO: separate python script??
+#TODO: separate python script?? Not needed after all...
 class ResampleImageSpec(ANTSCommandInputSpec):
     dimension = traits.Enum(2,3,4,
             argstr='%d',
@@ -128,14 +128,14 @@ class ResampleImageSpec(ANTSCommandInputSpec):
     spacing = traits.Int(
             argstr = 'spacing=%d',
             position=6)
-    
+    #TODO:interpolation= onyl necessary when size and spacing not declared, does it also work when they are declared
     interpolation = traits.Enum(0,1,2,3,4,
-            argstr='%d',
+            argstr='interpolation=%d',
             position = 7)
     #TODO:optional parameters size, spacing, interpolation, blablabla...
 
 def ants_int_resample(dim,input_image,resolution,interpolation,output_image = None):
-    print(str(dim),input_image,output_image,str(resolution),str(interpolation))
+    #print(str(dim),input_image,output_image,str(resolution),str(interpolation))
     ri = ResampleImage()
     ri.inputs.dimension = dim
     ri.inputs.input_image = input_image
@@ -143,10 +143,10 @@ def ants_int_resample(dim,input_image,resolution,interpolation,output_image = No
         #TODO: theres got to be an easier way...
         output_image = ""
         for s in input_image.split("_"):
-            if "um" not in s :  
+            if "um" not in s :
                 output_image += s + "_"
             else:
-                output_image += (str(resolution) + "um_")
+                output_image += (str(resolution) + "um_" + str(interpolation))
         output_image = output_image[:-1]
     print(output_image)
     ri.inputs.output_image = output_image
@@ -154,8 +154,8 @@ def ants_int_resample(dim,input_image,resolution,interpolation,output_image = No
     resolution_cmd = str(resolution) + 'x' + str(resolution) + 'x' + str(resolution)
     print(resolution_cmd)
     ri.inputs.M = resolution_cmd
-    ri.inputs.size = 1
-    ri.inputs.spacing = 0
+    #ri.inputs.size = 1  TODO: Why did I take these out exactly? What do they do??
+    #ri.inputs.spacing = 0
     ri.inputs.interpolation = interpolation
     print(ri.cmdline)
     ri.run()
@@ -169,12 +169,6 @@ class ResampleImage(ANTSCommand):
     input_spec = ResampleImageSpec
     output_spec = ResampleImageOutputSpec
 
-def ants_resampleImage(img,resolution):
-    at = ApplyTransforms()
-    at.inputs.input_image = img
-    at.inputs.reference_image = "bl"
-    at.inputs.output_image="bl"
-    at.inputs.transforms = 'identity'
 
 #TODO:remove unnecessary files
 def download_all_connectivity(info):
@@ -192,29 +186,37 @@ def download_all_connectivity(info):
         #replace brackets with '_' and remove all other special characters
         path_to_exp = os.path.join("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_connectivity_data",str(exp))
         os.mkdir(path_to_exp)
-        for resolution in [100,25]:
+        #TODO: higher resolution: 142m per file??
+        for resolution in [100]:
             resolution_url = "?image=projection_density&resolution=" + str(resolution)
             url = download_url + str(exp) + resolution_url
-            print(url)
             fh = urllib.request.urlretrieve(url)
             filename = str.split((fh[1]._headers[6][1]),'filename=')[1]  #TODO: Consistent??
             #TODO: do that differenttly ...
             filename = str.split(filename,";")[0]
-            file_path = os.path.join(path_to_exp,filename)
-            print(filename)
-            print(file_path)
-            os.rename(fh[0],file_path)
+            file_path_nrrd = os.path.join(path_to_exp,filename)
+            os.rename(fh[0],file_path_nrrd)
             #file_path_res=ants_resampleImage(file_path,resolution)
-            file_path = nrrd_to_nifti(file_path)
-            file_path = apply_composite(file_path)
-            if resolution == 25 :
-                target_resolution = 40
-            elif resolution == 100:
-                target_resolution = 200
-            print("to resample")
-            print(file_path)
-            file_path = ants_int_resample(3,file_path,target_resolution,4)
-def apply_composite(file):
+            file_path_nii = nrrd_to_nifti(file_path_nrrd)
+            os.remove(file_path_nrrd)
+            file_path_2dsurqec = apply_composite(file_path_nii,resolution)
+            os.remove(file_path_nii)
+            #TODO: No need to resample if apply composite is already with a reference of target resolution. Check if we should get a composite-file at 25um!
+            #if resolution == 25 :
+            #    target_resolution = 40
+            #elif resolution == 100:
+            #    target_resolution = 200
+            #print("to resample")
+            #print(file_path)
+            #ants_int_resample(3,file_path,target_resolution,0)
+            #ants_int_resample(3,file_path,target_resolution,1)
+            #ants_int_resample(3,file_path,target_resolution,2)
+            #ants_int_resample(3,file_path,target_resolution,3)
+            #ants_int_resample(3,file_path,target_resolution,4)
+
+def apply_composite(file,resolution):
+    #TODO: does this downsample if composite file is low resolution? Currently composite file is 40um. If it does,is it a problem? Target resolution is 40 anyway, but maybe get a 
+    #composite file at 25um as well? ResampleImage is possibly not needed otherwise, just specify reference image resolution of 40 and 200
     """
     Uses ANTS ApplyTransforms to register image to
 
@@ -228,10 +230,27 @@ def apply_composite(file):
     at = ApplyTransforms()
     at.inputs.dimension = 3
     at.inputs.input_image = file
-    at.inputs.reference_image = 'dsurqec_200micron_masked.nii'
-    name = str.split(os.path.basename(file),'.nii')[0] + '_2dsurqec.nii.gz'
-    at.inputs.interpolation = 'NearestNeighbor' #TODO: Sure??
-    output_image = os.path.join(os.path.dirname(file),name)
+    if resolution == 100:
+        ref_image = 'dsurqec_200micron_masked.nii'
+        resolution = 200
+    else:
+        ref_image = 'dsurqec_40micron_masked.nii'
+        resolution = 40
+
+    #TODO: theres got to be an easier way...
+    output_image = ""
+    for s in file.split("_"):
+        if "um" not in s :
+            output_image += s + "_"
+        else:
+            output_image += (str(resolution) + "um_")
+    output_image = output_image[:-1]
+    
+    at.inputs.reference_image = ref_image
+    name = str.split(os.path.basename(output_image),'.nii')[0] + '_2dsurqec.nii.gz'
+    #at.inputs.interpolation = 'NearestNeighbor' #TODO: Sure??
+    at.inputs.interpolation = 'BSpline'
+    output_image = os.path.join(os.path.dirname(output_image),name)
     at.inputs.output_image = output_image
     at.inputs.transforms = 'abi2dsurqec_Composite.h5'
     at.run()
@@ -242,7 +261,6 @@ def apply_composite(file):
 
 def main():
 
-    #ants_int_resample(3,"/home/gentoo/src/abi2dsurqec_geneexpression/dsurqec_200micron_masked.nii", "/home/gentoo/src/abi2dsurqec_geneexpression/dsurqec_100micron_masked.nii",100,4)
     info=GetExpID()
     download_all_connectivity(info)
 

@@ -8,10 +8,12 @@ import csv
 import argparse
 #TODO:do I need nilearn??
 import nilearn
+import matplotlib.pyplot as plt
 import samri.plotting.maps as maps
 from collections import defaultdict
 from nilearn._utils.extmath import fast_abs_percentile
 
+#TODO: Currently loading data 3 times with nibabel.laod and get_fdata(), maybe load once and pass to func (if its the same data!)
 
 def transform(x,y,z,affine):
 	M = affine[:4, :4]
@@ -83,7 +85,7 @@ def create_mask(image,threshold):
 	#mask.inputs.out_file = img_out
 	#mask.run()
 	
-	mask_img = nibabel.load("/home/gentoo/src/abi2dsurqec_geneexpression/dsurqec_40micron_mask.nii")
+	mask_img = nibabel.load("/home/gentoo/src/abi2dsurqec_geneexpression/dsurqec_200micron_mask.nii")
 	atlas_mask = mask_img.get_fdata()
 
 	#using numpy instead of fslmaths
@@ -163,18 +165,57 @@ def ants_measure_similarity(fixed_image,moving_image,mask_gene = None,mask_map =
 	return res
 
 
+def _plot(dis):
+	fig = plt.figure()
+	main = fig.add_axes([0,0,0.6,1.0])
+	ax_1=fig.add_axes([0.6,0,0.4,0.3])
+	ax_2=fig.add_axes([0.6,0.3,0.4,0.3])
+	ax_3=fig.add_axes([0.6,0.6,0.4,0.3])
+	
+	for ax in [main,ax_1,ax_2,ax_3]:
+		ax.get_xaxis().set_visible(False)
+		ax.get_yaxis().set_visible(False)
+		ax.patch.set_alpha(0.1)
+		ax.spines["top"].set_visible(False)
+		ax.spines["bottom"].set_visible(False)
+		ax.spines["right"].set_visible(False)
+		ax.spines["left"].set_visible(False)
+
+	main.imshow(plt.imread("_stat.png"))
+	ax_1.imshow(plt.imread("0.png"))
+	ax_2.imshow(plt.imread("1.png"))
+	ax_3.imshow(plt.imread("2.png"))
+	plt.savefig("all.png",dpi=600)
+
+
 
 def plot_results(stat_map,results,hits = 3, template = "/usr/share/mouse-brain-atlases/ambmc2dsurqec_15micron_masked.obj",comparison='gene',path_to_genes="/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data"):
 	#TODO: overlay 1,3 plots
-	# TODO: put into stat3D or stat, to avoid loading the data twice threshold = fast_abs_percentile(stat_map
-	display_stat = maps.stat3D(stat_map,template="/home/gentoo/src/abi2dsurqec_geneexpression/dsurqec_200micron_masked.nii",save_as= '_stat.png',threshold=4,pos_values=True)
-
+	# TODO: put into stat3D or stat, to avoid loading the data twice threshold = fast_abs_percentile(stat_map)
+	dis = dict()
+	img_s = nibabel.load(stat_map)
+	img_data_s = img_s.get_fdata()
+	tresh_s = fast_abs_percentile(img_data_s[img_data_s >0],percentile=98)
+	print(tresh_s)
+	display_stat = maps.stat3D(stat_map,template="/home/gentoo/src/abi2dsurqec_geneexpression/dsurqec_200micron_masked.nii",save_as= '_stat.png',threshold=tresh_s,pos_values=True,figure_title="stat")
+	dis["main"] = display_stat
 	for i in range(0,hits):
-		gene_name = results[i][0].split("_")[0] #this should work in both cases
+		gene_name = results[i][0].split("_")[0] #TODO:this should work in both cases (also for connectivity??)
 		full_path_to_gene = results[i][1][1]
 		print("now plotting: ")
 		print(full_path_to_gene)
-		maps.stat3D(full_path_to_gene,template="/home/gentoo/src/abi2dsurqec_geneexpression/dsurqec_200micron_masked.nii",save_as=gene_name + '.png',threshold=0.1,pos_values=True)
+		img = nibabel.load(full_path_to_gene)
+		img_data = img.get_fdata()
+		tresh = fast_abs_percentile(img_data[img_data > 0],percentile=98)
+		display = maps.stat3D(full_path_to_gene,template="/home/gentoo/src/abi2dsurqec_geneexpression/dsurqec_200micron_masked.nii",save_as=str(i) + '.png',threshold=tresh,pos_values=True,figure_title=gene_name)
+		dis[str(i)] = display
+	_plot(dis)
+	print(tresh_s)
+	print(tresh)
+	#TODO:sep.function?
+
+
+
 	return
 
 def output_results(results,hits = 3,output_name=None):
@@ -182,7 +223,7 @@ def output_results(results,hits = 3,output_name=None):
 	print("Top " + str(hits) + " hits: ")
 	for i in range(0,hits):
 		print(str(results[i][1][0]) + " " + str(results[i][1][1]))
-
+	#TODO: some smart name...
 	#save to csv
 	if output_name is None:
 		output_name =  "output_results.csv"
@@ -202,7 +243,7 @@ def measure_similarity_geneexpression(stat_map,path_to_genes="/home/gentoo/src/a
 	"""
 
 	#TODO: if mirrored or mask files are already present, don't make them again
-	#TODO: 
+	#TODO:
 	#TODO: create a mask for the stat map? or userprovided? or both possible? Or use a single mask. Also, if yes, include threshold in mask func
 	mask_map = create_mask(stat_map,0)
 	#results = dict()
@@ -236,6 +277,8 @@ def measure_similarity_geneexpression(stat_map,path_to_genes="/home/gentoo/src/a
 			#TODO: catch unexpected errors as to not interrupt program, print genename
 			mask_gene = create_mask(img_gene,-1)
 			similarity = ants_measure_similarity(stat_map,img_gene,mask_gene = mask_gene,mask_map=mask_map,metric=metric,radius_or_number_of_bins=radius_or_number_of_bins)
+			print(dir)
+			print(similarity)
 			results[dir].append(similarity)
 			results[dir].append(img_gene)
 
@@ -275,7 +318,7 @@ def measure_similarity_geneexpression(stat_map,path_to_genes="/home/gentoo/src/a
 	return results
 
 
-def measure_similarity_connectivity(stat_map,path_to_exp="/home/gentoo/src/abi2dsurqec_geneexpression/ABI_connectivity_data",metric = 'MI',radius_or_number_of_bins = 64,resolution=40):
+def measure_similarity_connectivity(stat_map,path_to_exp="/home/gentoo/src/abi2dsurqec_geneexpression/ABI_connectivity_data",metric = 'MI',radius_or_number_of_bins = 64,resolution=200):
 	mask_map = create_mask(stat_map,0)
 	results = defaultdict(list)
 	for dir in os.listdir(path_to_exp):
@@ -306,7 +349,7 @@ def main():
 	img = "/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Mef2c/Mef2c_P56_sagittal_79677145_200um/Mef2c_P56_sagittal_79677145_200um_2dsurqec.nii.gz"
 # res = ants_measure_similarity("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Mef2c/Mef2c_P56_sagittal_79677145_200um/Mef2c_P56_sagittal_79677145_200um_2dsurqec.nii.gz","/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Mef2c/Mef2c_P56_coronal_79567505_200um//Mef2c_P56_coronal_79567505_200um_2dsurqec.nii.gz")
 	#	print(res)
-#	measure_similarity_geneexpression("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Mef2c/Mef2c_P56_coronal_79567505_200um/Mef2c_P56_coronal_79567505_200um_2dsurqec.nii.gz",metric = 'MI',radius_or_number_of_bins = 64,comparison = 'experiment')
+#	measure_similarity_geneexpression("/home/gentoo/src/abi2dsurqec_geneexpression/save_small_dataset/Mef2c/Mef2c_P56_coronal_79567505_200um/Mef2c_P56_coronal_79567505_200um_2dsurqec.nii.gz",metric = 'MI',radius_or_number_of_bins = 64,comparison = 'gene')
 #	measure_similarity_geneexpression("/home/gentoo/ABI_data_full/data/Tlx2/Tlx2_P56_sagittal_81655554_200um/Tlx2_P56_sagittal_81655554_200um_2dsurqec_mirrored.nii.gz",metric = 'MI',path_to_genes="/home/gentoo/ABI_data_full/data",radius_or_number_of_bins = 64,comparison = 'gene')
 
 	measure_similarity_connectivity("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Kat6a/Kat6a_P56_sagittal_71764326_200um/Kat6a_P56_sagittal_71764326_200um_2dsurqec_mirrored.nii.gz",metric = 'MI',radius_or_number_of_bins = 64)

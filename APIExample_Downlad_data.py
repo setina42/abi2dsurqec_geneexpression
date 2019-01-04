@@ -33,7 +33,7 @@ def GetGeneNames():
     """
 
     startRow = 0
-    numRows = 2000
+    numRows = 1000
     totalRows = -1
     rows = []
     GeneNames = []
@@ -56,7 +56,8 @@ def GetGeneNames():
         rows += response['msg']
         for x in response['msg']:
 
-            if x['failed'] == False and x['expression'] == True :
+            if x['failed'] == False:
+            #if x['failed'] == False and x['expression'] == True :
                 info[x['genes'][0]['acronym']].append(x['id'])
         if totalRows < 0:
             totalRows = int(response['total_rows'])
@@ -77,7 +78,7 @@ def download_all_ISH(info):
         SectionDataSetID : list(int)
             o=[0.200000002980232 0 0 -6.26999998092651; 0 0.200000002980232 0 -10.6000003814697; 0 0 0.200000002980232 -7.88000011444092; 0 0 0 1]list of SectionDataSetID to download.
     """
-    os.mkdir("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data")
+    if not os.path.exists("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data"): os.mkdir("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data")
     download_url = "http://api.brain-map.org/grid_data/download/"
     for gene in info:
         #replace brackets with '_' and remove all other special characters
@@ -85,7 +86,7 @@ def download_all_ISH(info):
         gene_r = re.sub('\W', '',gene_r)
         info[gene_r] = info.pop(gene)
         path_to_gene = os.path.join("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data",gene_r)
-        os.mkdir(path_to_gene)
+        if not os.path.exists(path_to_gene) : os.mkdir(path_to_gene)
         for id in info[gene_r]:
             url = download_url + str(id)
             fh = urllib.request.urlretrieve(url)
@@ -103,6 +104,7 @@ def download_all_ISH(info):
             path_to_mhd = os.path.join(path_to_folder,"energy.mhd")
             path_to_nifti = convert_raw_to_nii(path_to_mhd,filename)
             apply_composite(path_to_nifti)
+            os.remove(path_to_nifti)
 
 def convert_raw_to_nii(input_file,output_file):
     """
