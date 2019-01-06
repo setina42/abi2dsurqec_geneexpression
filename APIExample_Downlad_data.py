@@ -3,6 +3,7 @@ import copy
 import json
 import os
 import sys
+import shutil
 import urllib
 import urllib.request
 import zipfile
@@ -101,6 +102,11 @@ def download_all_ISH(info):
             path_to_folder = os.path.join(path_to_gene,filename)
             zf.extractall(os.path.join(path_to_gene,filename))
             zf.close()
+            #some datasets witho (path) d file. Skip and delete folder
+            if not os.path.isfile(os.path.join(path_to_folder,"energy.mhd")):
+                shutil.rmtree(path_to_folder)
+                continue
+
             path_to_mhd = os.path.join(path_to_folder,"energy.mhd")
             path_to_nifti = convert_raw_to_nii(path_to_mhd,filename)
             apply_composite(path_to_nifti)

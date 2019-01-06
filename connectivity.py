@@ -5,6 +5,7 @@ import os
 import sys
 import urllib
 import urllib.request
+import shutil
 import zipfile
 import numpy
 import nibabel
@@ -170,7 +171,15 @@ class ResampleImage(ANTSCommand):
     output_spec = ResampleImageOutputSpec
 
 
-#TODO:remove unnecessary files
+def get_exp_metadata(exp,path):
+    url_meta = API_DATA_PATH + "/SectionDataSet/query.xml?id=" + str(exp) + "&include=specimen(stereotaxic_injections(primary_injection_structure,structures))"
+    filename = str(exp) + "_experiment_metadata.xml"
+    s = urllib.request.urlopen(url_meta)
+    contents = s.read()
+    file = open(os.path.join(path,filename), 'wb')
+    file.write(contents)
+    file.close()
+
 def download_all_connectivity(info):
     """
     Download all given genes corresponding to SectionDataSetID given in 100um and 25um resolution, converts nrrd to nii, registers to dsurqec... and resamples files to 40 and 200 respectively.
@@ -186,8 +195,8 @@ def download_all_connectivity(info):
         #replace brackets with '_' and remove all other special characters
         path_to_exp = os.path.join("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_connectivity_data",str(exp))
         os.mkdir(path_to_exp)
-        #TODO: higher resolution: 142m per file??
-        for resolution in [100]:
+        get_exp_metadata(exp,path_to_exp)
+        for resolution in [25,100]:
             resolution_url = "?image=projection_density&resolution=" + str(resolution)
             url = download_url + str(exp) + resolution_url
             fh = urllib.request.urlretrieve(url)
@@ -195,7 +204,9 @@ def download_all_connectivity(info):
             #TODO: do that differenttly ...
             filename = str.split(filename,";")[0]
             file_path_nrrd = os.path.join(path_to_exp,filename)
-            os.rename(fh[0],file_path_nrrd)
+            shutil.copy(fh[0],file_path_nrrd)
+            os.remove(fh[0])
+            #os.rename(fh[0],file_path_nrrd)
             #file_path_res=ants_resampleImage(file_path,resolution)
             file_path_nii = nrrd_to_nifti(file_path_nrrd)
             os.remove(file_path_nrrd)
@@ -213,6 +224,7 @@ def download_all_connectivity(info):
             #ants_int_resample(3,file_path,target_resolution,2)
             #ants_int_resample(3,file_path,target_resolution,3)
             #ants_int_resample(3,file_path,target_resolution,4)
+    return
 
 def apply_composite(file,resolution):
     #TODO: does this downsample if composite file is low resolution? Currently composite file is 40um. If it does,is it a problem? Target resolution is 40 anyway, but maybe get a 

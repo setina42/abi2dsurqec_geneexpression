@@ -188,9 +188,8 @@ def _plot(dis):
 	plt.savefig("all.png",dpi=600)
 
 
-
+#TODO: maybe use the same cut coords for all plots, may prove difficult bc not possbile to use nilearns func directly
 def plot_results(stat_map,results,hits = 3, template = "/usr/share/mouse-brain-atlases/ambmc2dsurqec_15micron_masked.obj",comparison='gene',path_to_genes="/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data"):
-	#TODO: overlay 1,3 plots
 	# TODO: put into stat3D or stat, to avoid loading the data twice threshold = fast_abs_percentile(stat_map)
 	dis = dict()
 	img_s = nibabel.load(stat_map)
@@ -236,7 +235,7 @@ def output_results(results,hits = 3,output_name=None):
 
 
 	return
-
+#TODO: sorted results: same score, sorting?? warning
 def measure_similarity_geneexpression(stat_map,path_to_genes="/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data",metric = 'MI',radius_or_number_of_bins = 64,comparison = 'gene',strategy='mean'):
 	"""
 	master blabla
@@ -319,6 +318,7 @@ def measure_similarity_geneexpression(stat_map,path_to_genes="/home/gentoo/src/a
 
 
 def measure_similarity_connectivity(stat_map,path_to_exp="/home/gentoo/src/abi2dsurqec_geneexpression/ABI_connectivity_data",metric = 'MI',radius_or_number_of_bins = 64,resolution=200):
+	#TODO: mirror sagittal for connectivity??
 	mask_map = create_mask(stat_map,0)
 	results = defaultdict(list)
 	for dir in os.listdir(path_to_exp):
