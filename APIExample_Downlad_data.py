@@ -10,6 +10,7 @@ import zipfile
 import numpy
 import nibabel
 import re
+from socket import timeout
 from collections import defaultdict
 from mhd_utils_3d import *
 from nipype.interfaces.ants import ApplyTransforms
@@ -33,7 +34,7 @@ def GetGeneNames():
 
     """
 
-    startRow = 0
+    startRow = 1800
     numRows = 1000
     totalRows = -1
     rows = []
@@ -58,6 +59,7 @@ def GetGeneNames():
         for x in response['msg']:
 
             if x['failed'] == False:
+            #TODO: check all datasets where expression == False and see whats there. Maybe kick them out again
             #if x['failed'] == False and x['expression'] == True :
                 info[x['genes'][0]['acronym']].append(x['id'])
         if totalRows < 0:
@@ -79,38 +81,61 @@ def download_all_ISH(info):
         SectionDataSetID : list(int)
             o=[0.200000002980232 0 0 -6.26999998092651; 0 0.200000002980232 0 -10.6000003814697; 0 0 0.200000002980232 -7.88000011444092; 0 0 0 1]list of SectionDataSetID to download.
     """
-    if not os.path.exists("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data"): os.mkdir("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data")
+    failed_downloads = list()
+    #TODO: script keeps hanging somewhere, maybe timeout for connection, or try catch block and saving exp files numbers for later downloads:
+    if not os.path.exists("/mnt/data/setinadata/abi_data/geneexpression/ABI_geneexpression_data"): os.mkdir("/mnt/data/setinadata/abi_data/geneexpression/ABI_geneexpression_data")
     download_url = "http://api.brain-map.org/grid_data/download/"
     for gene in info:
         #replace brackets with '_' and remove all other special characters
         gene_r = re.sub('[()]',"_",gene)
-        gene_r = re.sub('\W', '',gene_r)
+        #gene_r = re.sub('\W', '',gene_r)
         info[gene_r] = info.pop(gene)
-        path_to_gene = os.path.join("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data",gene_r)
+        path_to_gene = os.path.join("/mnt/data/setinadata/abi_data/geneexpression/ABI_geneexpression_data",gene_r)
+        #TODO: change lodic, check if right file exists
+        if os.path.exists(path_to_gene):continue
         if not os.path.exists(path_to_gene) : os.mkdir(path_to_gene)
         for id in info[gene_r]:
+            print("1")
             url = download_url + str(id)
-            fh = urllib.request.urlretrieve(url)
+            print("2")
+            #TODO: Set a timeout option??
+            try:
+                fh = urllib.request.urlretrieve(url)
+            except timeout:
+                print("timeout with " + str(id))
+                failed_downloads.append(id)
+                shutil.rmtree(path_to_gene)
+                continue
+
+            print("3")
             zf = zipfile.ZipFile(fh[0])
+            print("4")
             filename = str.split((fh[1]._headers[6][1]),'filename=')[1]  #TODO: Consistent??
             filename = str.split(filename,'.zip')[0]
             print(filename)
             #replace brackets with '_' and remove all other special characters
             filename = re.sub('[()]',"_",filename)
-            filename = re.sub('\W', '',filename)
-            print(filename)
+            #filename = re.sub('\W', '',filename)
             path_to_folder = os.path.join(path_to_gene,filename)
+            print("5")
             zf.extractall(os.path.join(path_to_gene,filename))
+            print("6")
             zf.close()
-            #some datasets witho (path) d file. Skip and delete folder
+            #some datasets without energy.mhd file. Skip and delete folder
             if not os.path.isfile(os.path.join(path_to_folder,"energy.mhd")):
-                shutil.rmtree(path_to_folder)
-                continue
+                    print("removing" + str(id))
+                    shutil.rmtree(path_to_folder)
+                    continue
 
             path_to_mhd = os.path.join(path_to_folder,"energy.mhd")
             path_to_nifti = convert_raw_to_nii(path_to_mhd,filename)
             apply_composite(path_to_nifti)
             os.remove(path_to_nifti)
+
+    if len(failed_downloads) > 0:
+        print("failed: ")
+        for item in failed_downloads:
+            print(str(item))
 
 def convert_raw_to_nii(input_file,output_file):
     """

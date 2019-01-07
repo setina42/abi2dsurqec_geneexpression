@@ -189,14 +189,21 @@ def download_all_connectivity(info):
         SectionDataSetID : list(int)
             o=[0.200000002980232 0 0 -6.26999998092651; 0 0.200000002980232 0 -10.6000003814697; 0 0 0.200000002980232 -7.88000011444092; 0 0 0 1]list of SectionDataSetID to download.
     """
-    os.mkdir("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_connectivity_data")
+    if not os.path.isdir("/mnt/data/setinadata/abi_data/connectivity/ABI_connectivity_data"): os.mkdir("/mnt/data/setinadata/abi_data/connectivity/ABI_connectivity_data")
     download_url = "http://api.brain-map.org/grid_data/download_file/"
-    for exp in info:
-        #replace brackets with '_' and remove all other special characters
-        path_to_exp = os.path.join("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_connectivity_data",str(exp))
-        os.mkdir(path_to_exp)
-        get_exp_metadata(exp,path_to_exp)
-        for resolution in [25,100]:
+    for resolution in [100,25]:
+        if resolution == 100: path_to_res = os.path.join("/mnt/data/setinadata/abi_data/connectivity/ABI_connectivity_data",("data_200um"))
+        if resolution == 25: path_to_res = os.path.join("/mnt/data/setinadata/abi_data/connectivity/ABI_connectivity_data",("data_40um"))
+        if not os.path.isdir(path_to_res):os.mkdir(path_to_res)
+        for exp in info:
+            #replace brackets with '_' and remove all other special characters
+            path_to_exp = os.path.join(path_to_res,str(exp))
+            print(path_to_exp)
+            if os.path.isdir(path_to_exp):
+                print("skip" + str(exp))
+                continue
+            os.mkdir(path_to_exp)
+            get_exp_metadata(exp,path_to_exp) #TODO: so far no coordinate info. Also, avoid downloading twice 
             resolution_url = "?image=projection_density&resolution=" + str(resolution)
             url = download_url + str(exp) + resolution_url
             fh = urllib.request.urlretrieve(url)
@@ -204,13 +211,16 @@ def download_all_connectivity(info):
             #TODO: do that differenttly ...
             filename = str.split(filename,";")[0]
             file_path_nrrd = os.path.join(path_to_exp,filename)
+            print(file_path_nrrd)
             shutil.copy(fh[0],file_path_nrrd)
             os.remove(fh[0])
-            #os.rename(fh[0],file_path_nrrd)
+            #os.rename(fh[0],file_path_nrrd) only works if source and dest are on the same filesystem
             #file_path_res=ants_resampleImage(file_path,resolution)
             file_path_nii = nrrd_to_nifti(file_path_nrrd)
+            print(file_path_nii)
             os.remove(file_path_nrrd)
             file_path_2dsurqec = apply_composite(file_path_nii,resolution)
+            print(file_path_2dsurqec)
             os.remove(file_path_nii)
             #TODO: No need to resample if apply composite is already with a reference of target resolution. Check if we should get a composite-file at 25um!
             #if resolution == 25 :
@@ -224,6 +234,7 @@ def download_all_connectivity(info):
             #ants_int_resample(3,file_path,target_resolution,2)
             #ants_int_resample(3,file_path,target_resolution,3)
             #ants_int_resample(3,file_path,target_resolution,4)
+    
     return
 
 def apply_composite(file,resolution):
@@ -251,12 +262,13 @@ def apply_composite(file,resolution):
 
     #TODO: theres got to be an easier way...
     output_image = ""
-    for s in file.split("_"):
+    for s in os.path.basename(file).split("_"):
         if "um" not in s :
             output_image += s + "_"
         else:
             output_image += (str(resolution) + "um_")
     output_image = output_image[:-1]
+    output_image = os.path.join(os.path.dirname(file),output_image)
     
     at.inputs.reference_image = ref_image
     name = str.split(os.path.basename(output_image),'.nii')[0] + '_2dsurqec.nii.gz'
