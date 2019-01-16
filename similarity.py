@@ -107,6 +107,7 @@ def create_mask(image,threshold):
 def nan_if(arr,value):
 	return np.where(arr == value, np.nan,arr)
 
+#TODO:evaluate mean average, diff to and between single experiments, especially now that we include expression = false as well, with small expr, patterns. Also , habe a loo
 def create_experiment_average(imgs,strategy='max'):
 	"""
 	In case of several datasets present, experiment average is calculated.
@@ -345,7 +346,7 @@ def main():
 	parser.add_argument('--radius_or_number_of_bins','-r',type=int,default = 64)
 	parser.add_argument('--metric','-m',type=str,default='MI')
 	parser.add_argument('--strategy','-y',type=str, default='max')
-
+	args=parser.parse_args()
 	img = "/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Mef2c/Mef2c_P56_sagittal_79677145_200um/Mef2c_P56_sagittal_79677145_200um_2dsurqec.nii.gz"
 # res = ants_measure_similarity("/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Mef2c/Mef2c_P56_sagittal_79677145_200um/Mef2c_P56_sagittal_79677145_200um_2dsurqec.nii.gz","/home/gentoo/src/abi2dsurqec_geneexpression/ABI_geneexpression_data/Mef2c/Mef2c_P56_coronal_79567505_200um//Mef2c_P56_coronal_79567505_200um_2dsurqec.nii.gz")
 	#	print(res)
